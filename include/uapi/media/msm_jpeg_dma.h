@@ -25,4 +25,10 @@ struct msm_jpeg_dma_buff {
 	uint32_t offset;
 };
 
+/* msm_jpeg_dma_buf */
+struct msm_jpeg_dma_buff {
+	int32_t fd;
+	uint32_t offset;
+};
+
 #endif /* __UAPI_MSM_JPEG_DMA__ */

@@ -58,6 +58,9 @@
 #define SPK_PMD 2
 #define SPK_PMU 3
 
+#ifdef CONFIG_MACH_XIAOMI_MARKW
+#define MICBIAS_DEFAULT_VAL 2700000
+#else
 #define MICBIAS_DEFAULT_VAL 1800000
 #define MICBIAS_MIN_VAL 1600000
 #define MICBIAS_STEP_SIZE 50000
@@ -83,7 +86,14 @@ enum {
 static const DECLARE_TLV_DB_SCALE(analog_gain, 0, 25, 1);
 static struct snd_soc_dai_driver msm_anlg_cdc_i2s_dai[];
 /* By default enable the internal speaker boost */
+#ifdef CONFIG_MACH_XIAOMI_MARKW
+static struct switch_dev accdet_data;
+static int accdet_state;
+
+static bool spkr_boost_en;
+#else
 static bool spkr_boost_en = true;
+#endif
 
 static char on_demand_supply_name[][MAX_ON_DEMAND_SUPPLY_NAME_LENGTH] = {
 	"cdc-vdd-mic-bias",
@@ -561,9 +571,15 @@ static void msm_anlg_cdc_mbhc_internal_micbias_ctrl(struct snd_soc_codec *codec,
 {
 	if (micbias_num == 1) {
 		if (enable)
+#ifdef CONFIG_MACH_XIAOMI_MARKW
+			snd_soc_update_bits(codec,
+				MSM89XX_PMIC_ANALOG_MICB_1_INT_RBIAS,
+				0x18, 0x18);
+#else
 			snd_soc_update_bits(codec,
 				MSM89XX_PMIC_ANALOG_MICB_1_INT_RBIAS,
 				0x10, 0x10);
+#endif
 		else
 			snd_soc_update_bits(codec,
 				MSM89XX_PMIC_ANALOG_MICB_1_INT_RBIAS,
@@ -1373,6 +1389,19 @@ err:
 	return NULL;
 }
 
+#ifdef CONFIG_MACH_XIAOMI_MARKW
+void msm_anlg_cdc_codec_set_headset_state(u32 state)
+{
+	switch_set_state((struct switch_dev *)&accdet_data, state);
+	accdet_state = state;
+}
+
+int msm_anlg_cdc_codec_get_headset_state(void)
+{
+	pr_debug("%s accdet_state = %d\n", __func__, accdet_state);
+	return accdet_state;
+}
+#endif
 static int msm_anlg_cdc_codec_enable_on_demand_supply(
 		struct snd_soc_dapm_widget *w,
 		struct snd_kcontrol *kcontrol, int event)
@@ -1436,10 +1465,9 @@ static int msm_anlg_cdc_codec_enable_on_demand_supply(
 		}
 		if (atomic_dec_return(&supply->ref) == 0) {
 			ret = regulator_disable(supply->supply);
-			if (ret)
-				dev_err(codec->dev, "%s: Failed to disable %s\n",
-					__func__,
-					on_demand_supply_name[w->shift]);
+		if (ret)
+		        dev_err(codec->dev, "%s: Failed to disable %s\n",
+				        __func__, on_demand_supply_name[w->shift]);
 			ret = regulator_set_voltage(supply->supply,
 						    0,
 						    supply->max_uv);
@@ -3388,9 +3416,15 @@ static const struct snd_soc_dapm_widget msm_anlg_cdc_dapm_widgets[] = {
 		7, 0, NULL, 0, msm_anlg_cdc_codec_enable_spk_pa,
 		SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
 		SND_SOC_DAPM_PRE_PMD | SND_SOC_DAPM_POST_PMD),
-	SND_SOC_DAPM_PGA_E("LINEOUT PA", MSM89XX_PMIC_ANALOG_RX_LO_EN_CTL,
+#ifdef CONFIG_MACH_XIAOMI_MARKW
+	  SND_SOC_DAPM_PGA_E("LINEOUT PA", MSM89XX_PMIC_ANALOG_RX_LO_EN_CTL,
 			6, 0, NULL, 0, msm_anlg_cdc_codec_enable_lo_pa,
 			SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_PRE_PMD),
+#else
+	  SND_SOC_DAPM_PGA_E("LINEOUT PA", MSM89XX_PMIC_ANALOG_RX_LO_EN_CTL,
+			5, 0 , NULL, 0, msm8x16_wcd_codec_enable_lo_pa,
+			SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
+#endif
 
 	SND_SOC_DAPM_MUX("EAR_S", SND_SOC_NOPM, 0, 0, ear_pa_mux),
 	SND_SOC_DAPM_MUX("SPK", SND_SOC_NOPM, 0, 0, spkr_mux),
@@ -4191,6 +4225,18 @@ static int msm_anlg_cdc_soc_probe(struct snd_soc_codec *codec)
 
 	wcd_mbhc_init(&sdm660_cdc->mbhc, codec, &mbhc_cb, &intr_ids,
 		      wcd_mbhc_registers, true);
+
+#ifdef CONFIG_MACH_XIAOMI_MARKW
+	accdet_data.name = "h2w";
+	accdet_data.index = 0;
+	accdet_data.state = 0;
+
+	ret = switch_dev_register(&accdet_data);
+	if (ret) {
+		dev_err(codec->dev, "%s: Failed to register h2w\n", __func__);
+		return -ENOMEM;
+	}
+#endif
 
 	sdm660_cdc->int_mclk0_enabled = false;
 	/*Update speaker boost configuration*/

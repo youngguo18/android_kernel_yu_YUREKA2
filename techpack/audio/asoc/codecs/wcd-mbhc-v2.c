@@ -307,7 +307,11 @@ out_micb_en:
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_PULLUP);
 		else
 			/* enable current source and disable mb, pullup*/
+#ifdef CONFIG_MACH_XIAOMI_MARKW
+			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
+#else
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
+#endif
 
 		/* configure cap settings properly when micbias is disabled */
 		if (mbhc->mbhc_cb->set_cap_mode)
@@ -327,7 +331,11 @@ out_micb_en:
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
 		else
 			/* Disable micbias, pullup & enable cs */
+#ifdef CONFIG_MACH_XIAOMI_MARKW
+			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
+#else
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
+#endif
 		mutex_unlock(&mbhc->hphl_pa_lock);
 		clear_bit(WCD_MBHC_ANC0_OFF_ACK, &mbhc->hph_anc_state);
 		break;
@@ -345,7 +353,11 @@ out_micb_en:
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
 		else
 			/* Disable micbias, pullup & enable cs */
+#ifdef CONFIG_MACH_XIAOMI_MARKW
+			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
+#else
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
+#endif
 		mutex_unlock(&mbhc->hphr_pa_lock);
 		clear_bit(WCD_MBHC_ANC1_OFF_ACK, &mbhc->hph_anc_state);
 		break;
@@ -601,6 +613,9 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 			 jack_type, mbhc->hph_status);
 		wcd_mbhc_jack_report(mbhc, &mbhc->headset_jack,
 				mbhc->hph_status, WCD_MBHC_JACK_MASK);
+#ifdef CONFIG_MACH_XIAOMI_MARKW
+		sdm660_wcd_codec_set_headset_state(mbhc->hph_status);
+#endif
 		wcd_mbhc_set_and_turnoff_hph_padac(mbhc);
 		hphrocp_off_report(mbhc, SND_JACK_OC_HPHR);
 		hphlocp_off_report(mbhc, SND_JACK_OC_HPHL);
@@ -724,8 +739,10 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 		wcd_mbhc_jack_report(mbhc, &mbhc->headset_jack,
 				    (mbhc->hph_status | SND_JACK_MECHANICAL),
 				    WCD_MBHC_JACK_MASK);
+#ifdef CONFIG_MACH_XIAOMI_MARKW
+		sdm660_wcd_codec_set_headset_state(mbhc->hph_status);
+#endif
 		wcd_mbhc_clr_and_turnon_hph_padac(mbhc);
-
 	}
 	pr_debug("%s: leave hph_status %x\n", __func__, mbhc->hph_status);
 }
@@ -1112,6 +1129,11 @@ static irqreturn_t wcd_mbhc_btn_press_handler(int irq, void *data)
 				__func__);
 		goto done;
 	}
+#if 1
+	/* Don't process button interrupts immediately after plug detection */
+	if (mbhc->ignore_btn_intr)
+		goto done;
+#endif
 	mbhc->buttons_pressed |= mask;
 	mbhc->mbhc_cb->lock_sleep(mbhc, true);
 	if (schedule_delayed_work(&mbhc->mbhc_btn_dwork,
@@ -1163,6 +1185,14 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 		goto exit;
 
 	}
+#if 1
+	/* Don't process button interrupts immediately after plug detection */
+	if (mbhc->ignore_btn_intr) {
+		wcd_cancel_btn_work(mbhc);
+		mbhc->buttons_pressed &= ~WCD_MBHC_JACK_BUTTON_MASK;
+		goto exit;
+	}
+#endif
 	if (mbhc->buttons_pressed & WCD_MBHC_JACK_BUTTON_MASK) {
 		ret = wcd_cancel_btn_work(mbhc);
 		if (ret == 0) {
@@ -1898,6 +1928,9 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_codec *codec,
 		mbhc->moist_rref = hph_moist_config[2];
 	}
 
+#ifdef CONFIG_MACH_XIAOMI_MARKW
+	hph_swh = 1;
+#endif
 	mbhc->in_swch_irq_handler = false;
 	mbhc->current_plug = MBHC_PLUG_TYPE_NONE;
 	mbhc->is_btn_press = false;
@@ -1967,6 +2000,10 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_codec *codec,
 		INIT_DELAYED_WORK(&mbhc->mbhc_firmware_dwork,
 				  wcd_mbhc_fw_read);
 		INIT_DELAYED_WORK(&mbhc->mbhc_btn_dwork, wcd_btn_lpress_fn);
+#if 1
+		INIT_DELAYED_WORK(&mbhc->mbhc_btn_delay_dwork,
+						wcd_headset_btn_delay);
+#endif
 	}
 	mutex_init(&mbhc->hphl_pa_lock);
 	mutex_init(&mbhc->hphr_pa_lock);
