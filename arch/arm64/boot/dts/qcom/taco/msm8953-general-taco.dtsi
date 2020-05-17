@@ -547,3 +547,16 @@
         #include "battery/n2-qrd-atl-4000mah.dtsi"
         /delete-node/ qcom,qrd_msm8937_sku1_2920mah;
 };
+
+&pm8953_vadc {
+	status = "disabled";
+};
+
+&pmi8950_vadc {
+	status = "disabled";
+};
+
+
+&apps_iommu {
+	qcom,no-aarch64;
+};
